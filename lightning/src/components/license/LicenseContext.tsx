@@ -4,8 +4,8 @@ import type { LicenseState } from '@/types/license';
 export interface LicenseContextValue {
   license: LicenseState;
   activate: (key: string) => Promise<void>;
-  deactivate: () => void;
-  refresh: (key?: string) => Promise<void>;
+  deactivate: () => Promise<void>;
+  refresh: () => Promise<void>;
 }
 
 export const LicenseContext = createContext<LicenseContextValue | null>(null);

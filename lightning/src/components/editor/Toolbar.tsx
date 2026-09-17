@@ -1,4 +1,4 @@
-import { ArrowLeft, FileDown, Save, LayoutGrid, MapPin, Lock } from 'lucide-react';
+import { ArrowLeft, FileDown, Save, LayoutGrid, MapPin, Lock, Undo2, Redo2 } from 'lucide-react';
 import clsx from 'clsx';
 import { useNavigate } from 'react-router-dom';
 import { useLicenseContext } from '@/components/license/LicenseContext';
@@ -12,9 +12,13 @@ interface ToolbarProps {
   isDirty: boolean;
   onSave: () => void;
   onExportPdf: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
-export function Toolbar({ projectName, activeTab, onTabChange, isDirty, onSave, onExportPdf }: ToolbarProps) {
+export function Toolbar({ projectName, activeTab, onTabChange, isDirty, onSave, onExportPdf, onUndo, onRedo, canUndo, canRedo }: ToolbarProps) {
   const navigate = useNavigate();
   const { license } = useLicenseContext();
 
@@ -26,6 +30,24 @@ export function Toolbar({ projectName, activeTab, onTabChange, isDirty, onSave, 
         </button>
         <h1 className="truncate text-sm font-semibold text-white">{projectName}</h1>
         <span className="text-xs text-neutral-500">{isDirty ? 'Niet opgeslagen wijzigingen…' : 'Opgeslagen'}</span>
+        <div className="flex items-center gap-0.5 border-l border-neutral-800 pl-2">
+          <button
+            title="Ongedaan maken (Ctrl+Z)"
+            onClick={onUndo}
+            disabled={!canUndo}
+            className="rounded p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <Undo2 className="h-4 w-4" />
+          </button>
+          <button
+            title="Opnieuw uitvoeren (Ctrl+Shift+Z)"
+            onClick={onRedo}
+            disabled={!canRedo}
+            className="rounded p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            <Redo2 className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       <div className="flex items-center gap-1 rounded-md bg-neutral-900 p-1">

@@ -11,8 +11,8 @@ import { BoardPanel } from './BoardPanel';
 import { CircuitPanel } from './CircuitPanel';
 import { SchemaEditor } from './SchemaEditor';
 import { SituationEditor } from './SituationEditor';
+import { PlanSwitcher } from './PlanSwitcher';
 import { ValidationPanel } from './ValidationPanel';
-import type { SituationPlan } from '@/types/project';
 
 export function EditorPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -26,6 +26,10 @@ export function EditorPage() {
   const updateActiveProject = useProjectStore((s) => s.updateActiveProject);
   const updateCircuit = useProjectStore((s) => s.updateCircuit);
   const persistActiveProject = useProjectStore((s) => s.persistActiveProject);
+  const undo = useProjectStore((s) => s.undo);
+  const redo = useProjectStore((s) => s.redo);
+  const canUndo = useProjectStore((s) => s.past.length > 0);
+  const canRedo = useProjectStore((s) => s.future.length > 0);
 
   const [activeTab, setActiveTab] = useState<EditorTab>('schema');
   const [activeBoardId, setActiveBoardId] = useState<string | null>(null);
@@ -48,12 +52,37 @@ export function EditorPage() {
     }
   }, [activeProject, activeBoardId, activePlanId]);
 
+  // Zorgt dat er altijd minstens één situatieplan bestaat zodra de gebruiker
+  // naar dat tabblad gaat, zonder tijdens het renderen state bij te werken.
+  useEffect(() => {
+    if (activeTab === 'situatie' && activeProject && activeProject.situationPlans.length === 0) {
+      const plan = { id: uuidv4(), projectId: activeProject.id, name: 'Gelijkvloers', symbols: [] };
+      updateActiveProject((p) => ({ ...p, situationPlans: [...p.situationPlans, plan] }));
+      setActivePlanId(plan.id);
+    }
+  }, [activeTab, activeProject, updateActiveProject]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isMod = e.ctrlKey || e.metaKey;
+      if (!isMod || e.key.toLowerCase() !== 'z') return;
+      e.preventDefault();
+      if (e.shiftKey) {
+        redo();
+      } else {
+        undo();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [undo, redo]);
+
   if (!activeProject) {
     return <div className="flex h-screen items-center justify-center bg-neutral-950 text-neutral-400">Project laden…</div>;
   }
 
   const activeBoard = activeProject.boards.find((b) => b.id === activeBoardId) ?? activeProject.boards[0];
-  const activePlan = activeProject.situationPlans.find((p) => p.id === activePlanId) ?? null;
+  const activePlan = activeProject.situationPlans.find((p) => p.id === activePlanId) ?? activeProject.situationPlans[0] ?? null;
 
   const handleAddBoard = () => {
     const board = createBoard(activeProject.id, `Bord ${activeProject.boards.length + 1}`);
@@ -72,12 +101,25 @@ export function EditorPage() {
     setSelectedCircuitId(circuit.id);
   };
 
-  const ensureSituationPlan = (): SituationPlan => {
-    if (activePlan) return activePlan;
-    const plan: SituationPlan = { id: uuidv4(), projectId: activeProject.id, name: 'Gelijkvloers', symbols: [] };
+  const handleAddPlan = () => {
+    const plan = { id: uuidv4(), projectId: activeProject.id, name: `Plan ${activeProject.situationPlans.length + 1}`, symbols: [] };
     updateActiveProject((p) => ({ ...p, situationPlans: [...p.situationPlans, plan] }));
     setActivePlanId(plan.id);
-    return plan;
+  };
+
+  const handleRenamePlan = (id: string, name: string) => {
+    updateActiveProject((p) => ({
+      ...p,
+      situationPlans: p.situationPlans.map((plan) => (plan.id === id ? { ...plan, name } : plan)),
+    }));
+  };
+
+  const handleDeletePlan = (id: string) => {
+    updateActiveProject((p) => ({ ...p, situationPlans: p.situationPlans.filter((plan) => plan.id !== id) }));
+    if (activePlanId === id) {
+      const remaining = activeProject.situationPlans.filter((plan) => plan.id !== id);
+      setActivePlanId(remaining[0]?.id ?? null);
+    }
   };
 
   const handleExportPdf = async () => {
@@ -94,6 +136,10 @@ export function EditorPage() {
         isDirty={isDirty}
         onSave={() => void persistActiveProject()}
         onExportPdf={() => void handleExportPdf()}
+        onUndo={undo}
+        onRedo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -113,16 +159,28 @@ export function EditorPage() {
               onUpdateCircuit={(id, patch) => updateCircuit(activeBoard.id, id, (c) => ({ ...c, ...patch }))}
             />
           </>
+        ) : activePlan ? (
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <PlanSwitcher
+              plans={activeProject.situationPlans}
+              activePlanId={activePlan.id}
+              onSelect={setActivePlanId}
+              onAdd={handleAddPlan}
+              onRename={handleRenamePlan}
+              onDelete={handleDeletePlan}
+            />
+            <SituationEditor
+              plan={activePlan}
+              onChange={(plan) =>
+                updateActiveProject((p) => ({
+                  ...p,
+                  situationPlans: p.situationPlans.map((existing) => (existing.id === plan.id ? plan : existing)),
+                }))
+              }
+            />
+          </div>
         ) : (
-          <SituationEditor
-            plan={ensureSituationPlan()}
-            onChange={(plan) =>
-              updateActiveProject((p) => ({
-                ...p,
-                situationPlans: p.situationPlans.map((existing) => (existing.id === plan.id ? plan : existing)),
-              }))
-            }
-          />
+          <div className="flex flex-1 items-center justify-center text-neutral-500">Situatieplan wordt aangemaakt…</div>
         )}
       </div>
     </div>

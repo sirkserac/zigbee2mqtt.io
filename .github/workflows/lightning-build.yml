@@ -1,0 +1,76 @@
+name: Build Lightning installers
+
+# Bouwt de Lightning desktop-app (in lightning/) voor Windows en macOS met
+# gratis, door GitHub gehoste runners (geen betaalde build-service nodig).
+# Start handmatig via het "Run workflow"-knopje op het Actions-tabblad, of
+# automatisch door een tag te pushen zoals "lightning-v0.1.0".
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - 'lightning-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: lightning/package-lock.json
+      - working-directory: lightning
+        run: npm ci
+      - working-directory: lightning
+        run: npm run test
+      - working-directory: lightning
+        run: npx tsc -b --noEmit
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            label: windows
+          - platform: macos-latest
+            label: macos-arm64
+          - platform: macos-13
+            label: macos-intel
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: lightning/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: lightning
+        run: npm ci
+
+      - name: Build and publish
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: lightning
+          tagName: lightning-v__VERSION__
+          releaseName: 'Lightning v__VERSION__'
+          releaseBody: |
+            Automatische build van de Lightning AREI-app voor Windows en macOS.
+            Download hieronder het installatiebestand voor jouw besturingssysteem
+            (`.exe`/`.msi` voor Windows, `.dmg` voor macOS).
+          releaseDraft: true
+          prerelease: false

@@ -5,6 +5,8 @@ import { countProjects, deleteProject as dbDeleteProject, getProject, listProjec
 import { duplicateProject as duplicateProjectData, exportProjectToFile, importProjectFromFile } from '@/utils/lightningFile';
 import { createEmptyProject } from '@/utils/factories';
 
+const MAX_HISTORY = 50;
+
 interface ProjectStore {
   projects: ProjectListItem[];
   activeProject: Project | null;
@@ -12,6 +14,9 @@ interface ProjectStore {
   isLoading: boolean;
   isDirty: boolean;
   searchFilters: ProjectSearchFilters;
+  /** Undo/redo-geschiedenis van het actieve project (in-memory, per sessie). */
+  past: Project[];
+  future: Project[];
 
   loadProjectList: () => Promise<void>;
   setSearchFilters: (filters: ProjectSearchFilters) => Promise<void>;
@@ -27,6 +32,10 @@ interface ProjectStore {
   updateCircuit: (boardId: string, circuitId: string, updater: (circuit: Circuit) => Circuit) => void;
   persistActiveProject: () => Promise<void>;
   runValidation: () => void;
+  undo: () => void;
+  redo: () => void;
+  canUndo: () => boolean;
+  canRedo: () => boolean;
 }
 
 export const useProjectStore = create<ProjectStore>((set, get) => ({
@@ -36,6 +45,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   isLoading: false,
   isDirty: false,
   searchFilters: {},
+  past: [],
+  future: [],
 
   loadProjectList: async () => {
     set({ isLoading: true });
@@ -51,11 +62,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   openProject: async (id) => {
     set({ isLoading: true });
     const project = await getProject(id);
-    set({ activeProject: project, isLoading: false, isDirty: false });
+    set({ activeProject: project, isLoading: false, isDirty: false, past: [], future: [] });
     get().runValidation();
   },
 
-  closeProject: () => set({ activeProject: null, validationIssues: [], isDirty: false }),
+  closeProject: () => set({ activeProject: null, validationIssues: [], isDirty: false, past: [], future: [] }),
 
   createProject: async (name, projectLimit) => {
     const existingCount = await countProjects();
@@ -102,7 +113,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const current = get().activeProject;
     if (!current) return;
     const updated = updater({ ...current, updatedAt: new Date().toISOString() });
-    set({ activeProject: updated, isDirty: true });
+    const past = [...get().past, current].slice(-MAX_HISTORY);
+    set({ activeProject: updated, isDirty: true, past, future: [] });
     get().runValidation();
   },
 
@@ -139,4 +151,33 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const project = get().activeProject;
     set({ validationIssues: project ? validateProject(project) : [] });
   },
+
+  undo: () => {
+    const { past, activeProject } = get();
+    if (past.length === 0 || !activeProject) return;
+    const previous = past[past.length - 1];
+    set({
+      activeProject: previous,
+      past: past.slice(0, -1),
+      future: [activeProject, ...get().future].slice(0, MAX_HISTORY),
+      isDirty: true,
+    });
+    get().runValidation();
+  },
+
+  redo: () => {
+    const { future, activeProject } = get();
+    if (future.length === 0 || !activeProject) return;
+    const next = future[0];
+    set({
+      activeProject: next,
+      future: future.slice(1),
+      past: [...get().past, activeProject].slice(-MAX_HISTORY),
+      isDirty: true,
+    });
+    get().runValidation();
+  },
+
+  canUndo: () => get().past.length > 0,
+  canRedo: () => get().future.length > 0,
 }));
