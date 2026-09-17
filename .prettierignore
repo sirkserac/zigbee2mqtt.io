@@ -3,3 +3,7 @@ public/images/**/*
 docs/images/**/*
 pnpm-lock.yaml
 docs/externalConvertersExample/**/*
+
+# Lightning is a self-contained subproject with its own tooling/formatting
+# conventions (see lightning/package.json); it isn't part of the docs site.
+lightning/**/*
